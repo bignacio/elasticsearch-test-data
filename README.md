@@ -8,7 +8,7 @@ Because everybody loves test data.
 `es_test_data.py` lets you generate and upload randomized test data to your ES cluster so you can start running queries, see what performance is like, and verify your cluster is able to handle the load.<br>
 It allows for easy configuring of what the test documents look like, what kind of data types they include and what the field names are called.
 
-## Cool, how do I use this? 
+## Cool, how do I use this?
 
 #### Prerequisites
 
@@ -41,7 +41,7 @@ $ python es_test_data.py --es_url=http://localhost:9200
 [I 150604 15:43:20 es_test_data:219] Bulk upload 95th percentile:   31 ms
 $
 ```
- 
+
 Without any command line options, it will generate and upload 1000 documents of the format
 
 ```
@@ -64,9 +64,9 @@ to an Elasticsearch cluster at `http://localhost:9200` to an index called `test_
   - `num_of_replicas=0` the number of replicas for the index
 - `--batch_size=###` we use bulk upload to send the docs to ES, this option controls how many we send at a time
 - `--force_init_index=False` if `True` it will delete and re-create the index
-- `--dict_file=filename.dic` if provided the `dict` data type will use words from the dictionary file, format is one word per line. The entire file is loaded at start-up so be careful with (very) large files. You can download wordlists e.g.. from [here](http://ohardt.us/word-lists). 
+- `--dict_file=filename.dic` if provided the `dict` data type will use words from the dictionary file, format is one word per line. The entire file is loaded at start-up so be careful with (very) large files. You can download wordlists e.g.. from [here](http://ohardt.us/word-lists).
 
-#### What about the document format? 
+#### What about the document format?
 
 Glad you're asking, let's get to the doc format.<br>
 The doc format is configured via `--format=<<FORMAT>>` with the default being `name:str,age:int,last_updated:ts`.
@@ -83,12 +83,13 @@ Currently supported field types are:
 - `ts` a timestamp (in milliseconds), randomly picked between now +/- 30 days
 - `ipv4` returns a random ipv4
 - `tstxt` a timestamp in the "%Y-%m-%dT%H:%M:%S.000-0000" format, randomly picked between now +/- 30 days
-- `int:min:max` a random integer between `min` and `max`. If `min and `max` are not provided they default to 0 and 100000
+- `int:min:max` a random integer between `min` and `max`. If `min` and `max` are not provided they default to 0 and 100000
 - `str:min:max` a word ( as in, a string), made up of `min` to `max` random upper/lowercase and digit characters. If `min` and `max` are optional, defaulting to `3` and `10`
 - `words:min:max` a random number of `strs`, separated by space, `min` and `max` are optional, defaulting to '2' and `10`
 - `dict:min:max` a random number of entries from the dictionary file, separated by space, `min` and `max` are optional, defaulting to '2' and `10`
 - `text:words:min:max` a random number of words seperated by space from a given list of `-` seperated words, the words are optional defaulting to `text1` `text2` and `text3`, min and max are optional, defaulting to `1` and `1`
-- 'list:words' a random number of words generated as elastic search array field (multi valued field) from a given list of `-` seperated words. example: list:first-second-third will generate arrays of 0 or 3 items into the field.
+- `list:words` a random number of words generated as elastic search array field (multi valued field) from a given list of `-` seperated words. example: list:first-second-third will generate arrays of 0 or 3 items into the field.
+- `float:min:max:digits` a random float between `min` and `max` and `digits` number of digits. If `min`, `max` and `digits` are not provided they default to 0, 100000 and 2.
 
 
 ## todo
@@ -97,4 +98,3 @@ Currently supported field types are:
 - ...
 
 All suggestions, comments, ideas, pull requests are welcome!
-

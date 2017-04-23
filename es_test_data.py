@@ -139,6 +139,12 @@ def get_data_for_format(format):
         actual_len = random.randrange(0, list_len)
         for i in range(0,actual_len - 1,1):
             return_val.append(list[i])
+            
+    elif field_type == "float":
+        min = 0 if len(split_f) < 3 else int(split_f[2])
+        max = min + 100000 if len(split_f) < 4 else int(split_f[3])
+        digits = 2 if len(split_f) < 5 else int(split_f[4])
+        return_val = round(random.uniform(min, max), digits)
 
     return field_name, return_val
 
@@ -150,8 +156,7 @@ def generate_count(min, max):
         return random.randrange(max, min);
     else:
         return random.randrange(min, max);
-
-
+        
 def generate_random_doc(format):
     global id_counter
 
@@ -267,7 +272,8 @@ if __name__ == '__main__':
     tornado.options.define("num_of_shards", type=int, default=2, help="Number of shards for ES index")
     tornado.options.define("http_upload_timeout", type=int, default=3, help="Timeout in seconds when uploading data")
     tornado.options.define("count", type=int, default=100000, help="Number of docs to generate")
-    tornado.options.define("format", type=str, default='name:str,age:int,last_updated:ts', help="message format")
+    tornado.options.define("format", type=str, default='name:float:1:5:3', help="message format")
+    #tornado.options.define("format", type=str, default='name:str,age:int,last_updated:ts', help="message format")
     tornado.options.define("num_of_replicas", type=int, default=0, help="Number of replicas for ES index")
     tornado.options.define("force_init_index", type=bool, default=False, help="Force deleting and re-initializing the Elasticsearch index")
     tornado.options.define("set_refresh", type=bool, default=False, help="Set refresh rate to -1 before starting the upload")
