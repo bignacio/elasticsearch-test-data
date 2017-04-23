@@ -138,8 +138,8 @@ def get_data_for_format(format):
         list_len = len(list)
         actual_len = random.randrange(0, list_len)
         for i in range(0,actual_len - 1,1):
-            return_val += list[i]
-        
+            return_val.append(list[i])
+
     return field_name, return_val
 
 
