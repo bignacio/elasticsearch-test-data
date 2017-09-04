@@ -8,26 +8,52 @@ from random import shuffle
 import string
 import uuid
 import datetime
+import calendar
+import sys
 
 import tornado.gen
 import tornado.httpclient
 import tornado.ioloop
 import tornado.options
 
+
 async_http_client = tornado.httpclient.AsyncHTTPClient()
 id_counter = 0
 upload_data_count = 0
 _dict_data = None
+last_timestamp = 0
+dict_content = {}
 
 
+def execute_request(url, http_method, body):
+    request = tornado.httpclient.HTTPRequest(url, method=http_method, body=body, request_timeout=240, auth_username=tornado.options.options.username, auth_password=tornado.options.options.password)
+    return tornado.httpclient.HTTPClient().fetch(request)
+
+def open_format_file(filename):
+    with open(filename, 'r') as file:
+        return json.loads(file.read())
+
+def utc_seconds():
+    #return int((datetime.utcnow() - datetime(1970, 1, 1, 0, 0, 0, 0)).total_seconds())
+    return calendar.timegm(datetime.datetime.utcnow().utctimetuple())
+
+def generate_new_date(days_back):
+    global last_timestamp
+
+    now = utc_seconds()
+    min = now - 24 * 60 * 60 * days_back
+
+    last_timestamp = generate_count(min, now)
+
+    return last_timestamp
 
 def delete_index(idx_name):
     try:
-        url = "%s/%s?refresh=true" % (tornado.options.options.es_url, idx_name)
-        request = tornado.httpclient.HTTPRequest(url, method="DELETE", request_timeout=240, auth_username=tornado.options.options.username, auth_password=tornado.options.options.password)
-        response = tornado.httpclient.HTTPClient().fetch(request)
+        url = "%s/%s" % (tornado.options.options.es_url, idx_name)
+        response = execute_request(url, 'DELETE', None)
         logging.info('Deleting index  "%s" done   %s' % (idx_name, response.body))
-    except tornado.httpclient.HTTPError:
+    except tornado.httpclient.HTTPError as e:
+        logging.error('Error deleting index %s %s ' % (e, url))
         pass
 
 
@@ -39,18 +65,48 @@ def create_index(idx_name):
         },
         "refresh": True
     }
-
     body = json.dumps(schema)
+
+    create_es_index(idx_name, body)
+
+def create_index_with_template(idx_name, template_file):
+    logging.info('Creating index from template file "%s"' % template_file)
+
+    with open(template_file, 'r') as file:
+        template_body = file.read()
+
+    create_template(template_body)
+
+    create_es_index(idx_name, template_body)
+
+def create_template(template_body):
+    template = json.loads(template_body)
+
+    name = template['template']
+
+    logging.info('Creating template "%s"' % name)
+
+    url = "%s/_template/%s" % (tornado.options.options.es_url, name)
+
+    try:
+        response = execute_request(url, "PUT", template_body)
+        logging.info('Template "%s" created %s' % (name, response.body))
+    except tornado.httpclient.HTTPError as e:
+        logging.info('Looks like the template %s exists already %s' % name, e)
+    pass
+
+
+def create_es_index(idx_name, body):
+
     url = "%s/%s" % (tornado.options.options.es_url, idx_name)
     try:
         logging.info('Trying to create index %s' % (url))
         request = tornado.httpclient.HTTPRequest(url, method="PUT", body=body, request_timeout=240, auth_username=tornado.options.options.username, auth_password=tornado.options.options.password)
         response = tornado.httpclient.HTTPClient().fetch(request)
         logging.info('Creating index "%s" done   %s' % (idx_name, response.body))
-    except tornado.httpclient.HTTPError:
-        logging.info('Looks like the index exists already')
+    except tornado.httpclient.HTTPError as e:
+        logging.info('Looks like the index exists already %s' % e)
         pass
-
 
 @tornado.gen.coroutine
 def upload_batch(upload_data_txt):
@@ -70,8 +126,44 @@ def upload_batch(upload_data_txt):
     took = int(result['took'])
     logging.info("Upload: %s - upload took: %5dms, total docs uploaded: %7d" % (res_txt, took, upload_data_count))
 
+def get_es_date(jdate_type):
+    if jdate_type == 'time_keyword' or jdate_type == 'strict_date_hour':
+        return datetime.datetime.utcfromtimestamp(last_timestamp).strftime("%Y-%m-%dT%H")
+    elif jdate_type == 'strict_date':
+        return datetime.datetime.utcfromtimestamp(last_timestamp).strftime("%Y-%m-%d")
+    elif jdate_type == 'epoch_second':
+        return int(last_timestamp)
+    else:
+        return int(last_timestamp * 1000)
 
-def get_data_for_format(format):
+def get_random_entry_from_dictionary(filename):
+    global dict_content
+
+    if not dict_content.has_key(filename):
+        with open(filename, 'r') as file:
+            content = [line.strip() for line in file.readlines()]
+            dict_content[filename] = content
+
+    return random.choice(dict_content[filename])
+
+def get_data_for_format_json(json_data):
+    jtype = json_data['type']
+
+    if jtype == 'uuid':
+        return str(uuid.uuid4())
+    elif jtype == 'words':
+        content = json_data['content']
+        return random.choice(content)
+    elif jtype == 'date':
+        return get_es_date(json_data['format'])
+    elif jtype == 'dictionary':
+        return get_random_entry_from_dictionary(json_data['file'])
+
+    raise Exception('Invalid json type '+jtype)
+
+
+
+def get_data_for_format_inline(format):
     split_f = format.split(":")
     if not split_f:
         return None, None
@@ -167,7 +259,7 @@ def generate_random_doc(format):
     res = {}
 
     for f in format:
-        f_key, f_val = get_data_for_format(f)
+        f_key, f_val = get_data_for_format_inline(f)
         if f_key:
             res[f_key] = f_val
 
@@ -182,6 +274,24 @@ def generate_random_doc(format):
 
     return res
 
+def generate_random_doc_from_json(json_format):
+    json_data = json_format['properties']
+
+    result = get_random_value_for_field(json_data)
+
+    #logging.info("Result is %s " %result)
+    return result
+
+def get_random_value_for_field(json_data):
+
+    if json_data.has_key('type'):
+        result = get_data_for_format_json(json_data)
+    else:
+        result = {}
+        for field in json_data:
+            result[field] = get_random_value_for_field(json_data[field])
+
+    return result
 
 def set_index_refresh(val):
 
@@ -199,13 +309,16 @@ def set_index_refresh(val):
 
 @tornado.gen.coroutine
 def generate_test_data():
-
+    days_back = 31
     global upload_data_count
 
     if tornado.options.options.force_init_index:
         delete_index(tornado.options.options.index_name)
 
-    create_index(tornado.options.options.index_name)
+    if tornado.options.options.template:
+        create_index_with_template(tornado.options.options.index_name, tornado.options.options.template)
+    else:
+        create_index(tornado.options.options.index_name)
 
     # todo: query what refresh is set to, then restore later
     if tornado.options.options.set_refresh:
@@ -222,8 +335,16 @@ def generate_test_data():
             _dict_data = f.readlines()
         logging.info("Loaded %d words from the %s" % (len(_dict_data), tornado.options.options.dict_file))
 
-    format = tornado.options.options.format.split(',')
-    if not format:
+    if tornado.options.options.format_file:
+        format_data = open_format_file(tornado.options.options.format_file)
+        generate_random_doc_func = generate_random_doc_from_json
+    else:
+        format_data = tornado.options.options.format.split(',')
+        generate_random_doc_func = generate_random_doc
+
+    #logging.info("Format is %s" % format_data)
+
+    if not format_data:
         logging.error('invalid format')
         exit(1)
 
@@ -231,11 +352,17 @@ def generate_test_data():
     upload_data_txt = ""
     total_uploaded = 0
 
-    logging.info("Generating %d docs, upload batch size is %d" % (tornado.options.options.count,
-                                                                  tornado.options.options.batch_size))
-    for num in range(0, tornado.options.options.count):
+    count = tornado.options.options.count
+    if count == 0:
+        count = sys.maxint
 
-        item = generate_random_doc(format)
+    logging.info("Generating %d docs, upload batch size is %d" % (count,
+                                                                  tornado.options.options.batch_size))
+
+    for num in xrange(count):
+        generate_new_date(days_back)
+
+        item = generate_random_doc_func(format_data)
 
         if out_file:
             out_file.write("%s\n" % json.dumps(item))
@@ -285,6 +412,8 @@ if __name__ == '__main__':
     tornado.options.define("dict_file", type=str, default=None, help="Name of dictionary file to use")
     tornado.options.define("username", type=str, default=None, help="Username for elasticsearch")
     tornado.options.define("password", type=str, default=None, help="Password for elasticsearch")
+    tornado.options.define("template", type=str, default=None, help="Template file")
+    tornado.options.define("format_file", type=str, default=None, help="Format file")
     tornado.options.parse_command_line()
 
     tornado.ioloop.IOLoop.instance().run_sync(generate_test_data)
